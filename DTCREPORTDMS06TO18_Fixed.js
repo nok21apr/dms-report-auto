@@ -87,6 +87,30 @@ function getTodayFormatted() {
         console.log('✅ Report Page Loaded');
 
         // ---------------------------------------------------------
+        // Step 2.5: Select Truck "ทั้งหมด" (เพิ่มตาม request)
+        // ---------------------------------------------------------
+        console.log('   Selecting Truck "ทั้งหมด"...');
+        // รอให้ dropdown โหลดเสร็จก่อน
+        await page.waitForSelector('#ddl_truck', { visible: true, timeout: 60000 });
+
+        // รัน Javascript ที่เตรียมมาในหน้าเว็บ
+        await page.evaluate(() => {
+            var selectElement = document.getElementById('ddl_truck'); 
+            var options = selectElement.options; 
+            for (var i = 0; i < options.length; i++) { 
+                if (options[i].text.includes('ทั้งหมด')) { 
+                    selectElement.value = options[i].value; 
+                    // Trigger change event เพื่อให้เว็บรู้ว่าค่าเปลี่ยน (สำคัญมากสำหรับเว็บสมัยใหม่)
+                    var event = new Event('change', { bubbles: true });
+                    selectElement.dispatchEvent(event);
+                    break; 
+                } 
+            }
+        });
+        console.log('✅ Truck "ทั้งหมด" Selected');
+
+
+        // ---------------------------------------------------------
         // Step 3: Setting Date Range & Search
         // ---------------------------------------------------------
         console.log('3️⃣ Step 3: Setting Date Range 06:00 - 18:00...');
