@@ -111,48 +111,32 @@ function getTodayFormatted() {
         console.log('✅ Truck "ทั้งหมด" Selected');
 
         // ---------------------------------------------------------
-        // Step 2.6: Select Report Types (Force Click JS Method)
+        // Step 2.6: Select Report Types (Targeting #ddlharsh)
         // ---------------------------------------------------------
         console.log('   Selecting 3 Report Types...');
         
-        // 1. พยายามเปิด Dropdown ก่อน (สำคัญมาก เพราะถ้าไม่เปิด Element อาจจะยังไม่ถูกสร้าง)
+        // 1. เปิด Dropdown โดยคลิกที่ #ddlharsh ตามที่ระบุใน JSON
         try {
-            console.log('      Attempting to open Status Dropdown...');
-            // ลองคลิกที่ element ที่น่าจะเป็นตัวเปิด Dropdown สถานะ (เดาจากชื่อไฟล์ ddl_status หรือ label)
-            await page.evaluate(() => {
-                // ลองหา ddl_status, ddlStatus หรือ element ที่ใกล้กับคำว่า "สถานะ"
-                const possibleIds = ['ddl_status', 'ddlStatus', 'status_list', 'div_status'];
-                let opened = false;
-                
-                // ลองคลิก ID ที่น่าจะเป็นไปได้
-                for(let id of possibleIds) {
-                    const el = document.getElementById(id);
-                    if(el) { el.click(); opened = true; break; }
-                }
-                
-                // ถ้ายังไม่เจอ ลองหาจาก Label
-                if(!opened) {
-                    const labels = Array.from(document.querySelectorAll('label, span, div'));
-                    const statusLabel = labels.find(l => l.innerText && (l.innerText.includes('สถานะ') || l.innerText.includes('ชนิดรายงาน')));
-                    if(statusLabel) {
-                        // คลิก element ถัดไป หรือ input ใกล้ๆ
-                        const nextEl = statusLabel.nextElementSibling || statusLabel.parentElement.querySelector('div[class*="arrow"], div[class*="dropdown"]');
-                        if(nextEl) nextEl.click();
-                    }
-                }
-            });
-            // รอให้ Animation ของ Dropdown ทำงานสักนิด
+            console.log('      Clicking #ddlharsh to open dropdown...');
+            // รอให้ปุ่มปรากฏ
+            await page.waitForSelector('#ddlharsh', { visible: true, timeout: 30000 });
+            
+            // คลิกเพื่อเปิดรายการ
+            await page.click('#ddlharsh');
+            
+            // รอให้ Animation ของ Dropdown ทำงานสักนิด (1 วินาที)
             await new Promise(r => setTimeout(r, 1000));
         } catch(e) {
-            console.log('      ⚠️ Could not explicitly open dropdown (might be already open or non-standard).');
+            console.log('      ⚠️ Could not click #ddlharsh (Element might vary):', e.message);
         }
 
         // 2. ใช้ JS ค้นหา Text และคลิกเลย (Force Click)
+        // ค้นหาคำว่า "ระดับ 1", "ระดับ 2", "หาวนอน"
         const reportKeywords = ["ระดับ 1", "ระดับ 2", "หาวนอน"];
         
         for (const keyword of reportKeywords) {
             try {
-                console.log(`      Searching for "${keyword}"...`);
+                console.log(`      Searching for option "${keyword}"...`);
                 
                 const found = await page.evaluate((kw) => {
                     // ใช้ XPath ค้นหา text node ที่มีคำนั้นอยู่
@@ -165,22 +149,28 @@ function getTodayFormatted() {
                             let el = result.snapshotItem(i);
                             
                             // เดินขึ้นไปหา Container ที่คลิกได้ (เช่นถ้า text อยู่ใน span เล็กๆ ให้คลิก div ที่หุ้มอยู่)
-                            // เช็คว่าเป็น Dropdown Item หรือ Checkbox หรือไม่
                             while (el && el.tagName !== 'BODY') {
                                 // ถ้าเจอ Checkbox
                                 if (el.tagName === 'INPUT' && el.type === 'checkbox') {
                                     if(!el.checked) el.click();
                                     return true;
                                 }
-                                // ถ้าเจอ List Item (div/li)
-                                if (el.tagName === 'LI' || (el.tagName === 'DIV' && (el.className.includes('item') || el.className.includes('list')))) {
+                                // ถ้าเจอ List Item (div/li) ที่น่าจะเป็นตัวเลือก
+                                if (el.tagName === 'LI' || (el.tagName === 'DIV' && (el.className.includes('item') || el.className.includes('ui-multiselect-checkboxes')))) {
+                                    // ลองหา checkbox ข้างในก่อน
+                                    const internalCheckbox = el.querySelector('input[type="checkbox"]');
+                                    if (internalCheckbox) {
+                                        if(!internalCheckbox.checked) internalCheckbox.click();
+                                        return true;
+                                    }
+                                    // ถ้าไม่มี checkbox คลิกที่ตัวมันเอง
                                     el.click();
                                     return true;
                                 }
                                 el = el.parentElement;
                             }
                             
-                            // ถ้าไม่เจอ parent ที่ชัดเจน ให้คลิกที่ตัว element เองเลย
+                            // ถ้าไม่เจอ parent ที่ชัดเจน ให้คลิกที่ตัว element เองเลย (Fallback)
                             result.snapshotItem(i).click();
                             return true;
                         }
