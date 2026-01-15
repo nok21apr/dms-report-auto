@@ -83,15 +83,15 @@ function getTodayFormatted() {
         console.log('✅ Report Page Loaded');
 
         // ---------------------------------------------------------
-        // Step 2.5: Select Truck "ทั้งหมด"
+        // Step 2.5: Select Truck "ทั้งหมด" (Direct DOM Method)
         // ---------------------------------------------------------
         console.log('   Selecting Truck "ทั้งหมด"...');
         await page.waitForSelector('#ddl_truck', { visible: true, timeout: 60000 });
 
+        // รอให้ Option โหลดมา
         await page.waitForFunction(() => {
             const select = document.getElementById('ddl_truck');
-            if (!select) return false;
-            return Array.from(select.options).some(opt => opt.text.includes('ทั้งหมด') || opt.text.toLowerCase().includes('all'));
+            return select && select.options.length > 0;
         }, { timeout: 60000 });
 
         await page.evaluate(() => {
@@ -111,76 +111,56 @@ function getTodayFormatted() {
         console.log('✅ Truck "ทั้งหมด" Selected');
 
         // ---------------------------------------------------------
-        // Step 2.6: Select Report Types (Targeting #ddlharsh with JS)
+        // Step 2.6: Select Report Types (Type & Enter Mode from Recording)
         // ---------------------------------------------------------
-        console.log('   Selecting 3 Report Types (JS Injection Mode)...');
+        console.log('   Selecting 3 Report Types (Search & Enter)...');
         
-        // 1. เปิด Dropdown โดยคลิกที่ #ddlharsh
+        // ID ของ Input ค้นหาใน Select2 (อ้างอิงจากไฟล์ Recording ที่คุณส่งมา: #s2id_autogen3)
+        // และเพิ่ม Selector สำรองเผื่อเลขเปลี่ยน (#s2id_ddlharsh input)
+        const select2InputSelector = '#s2id_autogen3, #s2id_ddlharsh input.select2-input, .select2-search-field input';
+        
+        // รายการคำค้นหา 3 รายการ
+        const searchKeywords = [
+            "ระดับ 1",  // ค้นหา: แจ้งเตือนมีความง่วงระดับ 1
+            "ระดับ 2",  // ค้นหา: แจ้งเตือนมีความง่วงระดับ 2
+            "หาว"       // ค้นหา: แจ้งเตือนการหาวนอน
+        ];
+
         try {
-            console.log('      Clicking #ddlharsh to open dropdown...');
-            await page.waitForSelector('#ddlharsh', { visible: true, timeout: 30000 });
-            await page.click('#ddlharsh');
-            await new Promise(r => setTimeout(r, 1000));
-        } catch(e) {
-            console.log('      ⚠️ Could not click #ddlharsh:', e.message);
+            // รอให้ช่อง Input ค้นหาปรากฏ
+            await page.waitForSelector(select2InputSelector, { visible: true, timeout: 30000 });
+            
+            // หา Element จริงที่จะใช้พิมพ์
+            const inputElement = await page.$(select2InputSelector);
+
+            if (inputElement) {
+                for (const keyword of searchKeywords) {
+                    console.log(`      Typing "${keyword}"...`);
+                    
+                    // 1. คลิกที่ Input เพื่อ Focus
+                    await inputElement.click();
+                    
+                    // 2. พิมพ์คำค้นหา
+                    await inputElement.type(keyword);
+                    
+                    // รอสักนิดให้ Dropdown Suggestion ขึ้น (สำคัญ)
+                    await new Promise(r => setTimeout(r, 1000));
+                    
+                    // 3. กด Enter เพื่อเลือก
+                    await page.keyboard.press('Enter');
+                    
+                    console.log(`      Pressed Enter for "${keyword}"`);
+                    
+                    // รอให้ระบบประมวลผลการเลือกสักครู่ก่อนทำรายการถัดไป
+                    await new Promise(r => setTimeout(r, 500));
+                }
+            } else {
+                console.log('      ⚠️ Could not find Select2 input element.');
+            }
+
+        } catch (e) {
+            console.log('      ❌ Error in Select2 interaction:', e.message);
         }
-
-        // 2. ใช้ JavaScript ภายใน Browser (page.evaluate) เพื่อค้นหาและคลิก
-        await page.evaluate(() => {
-            const keywords = ["ระดับ 1", "ระดับ 2", "หาว"];
-            console.log('Starting JS selection for:', keywords);
-
-            // ค้นหา Element ทั้งหมดที่อาจจะเป็นตัวเลือก (Label, Span, หรือ ListItem)
-            // ค้นหาทั่วทั้ง Document เพราะ Dropdown มักจะ render ไว้ที่ Body
-            const allElements = document.querySelectorAll('label, span, div, li');
-
-            keywords.forEach(keyword => {
-                let found = false;
-                
-                // วนลูปหา element ที่มีข้อความตรงกับ keyword
-                for (let el of allElements) {
-                    // ตรวจสอบว่ามีข้อความและตรงกับคีย์เวิร์ดหรือไม่ (ตัดช่องว่างออกก่อนเทียบ)
-                    if (el.innerText && el.innerText.trim().includes(keyword)) {
-                        
-                        // ตรวจสอบว่าเป็น element ที่คลิกได้จริงๆ หรือไม่ (เช่นเป็น Label ของ Checkbox)
-                        // กรณี 1: เป็น Label ที่มี checkbox อยู่ข้างในหรือข้างๆ
-                        let checkbox = el.querySelector('input[type="checkbox"]');
-                        if (!checkbox && el.htmlFor) {
-                            checkbox = document.getElementById(el.htmlFor);
-                        }
-                        
-                        // กรณี 2: เป็น div/li ที่มี checkbox
-                        if (!checkbox) {
-                             checkbox = el.parentElement ? el.parentElement.querySelector('input[type="checkbox"]') : null;
-                        }
-
-                        // ถ้าเจอ Checkbox ให้เช็คว่าติ๊กหรือยัง
-                        if (checkbox) {
-                            if (!checkbox.checked) {
-                                checkbox.click(); // คลิกที่ Checkbox โดยตรง
-                                // บางทีต้องคลิกที่ Label ด้วยเพื่อให้ UI อัปเดต
-                                el.click(); 
-                            }
-                            found = true;
-                            break; // เจอแล้ว หยุดหาสำหรับ keyword นี้
-                        } else {
-                            // ถ้าไม่เจอ Checkbox แต่มีข้อความตรง ให้ลองคลิกที่ตัวมันเองเลย
-                            // (เช่น Dropdown บางแบบใช้ div ธรรมดาทำเป็นปุ่ม)
-                            // เช็คเพิ่มเติมว่าเป็น element ที่ visible
-                            if (el.offsetParent !== null) {
-                                el.click();
-                                found = true;
-                                break;
-                            }
-                        }
-                    }
-                }
-                
-                if (!found) {
-                    console.log('JS: Could not find option for ' + keyword);
-                }
-            });
-        });
         
         console.log('✅ Report Types Selection Finished');
 
