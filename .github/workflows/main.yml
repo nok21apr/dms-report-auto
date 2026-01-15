@@ -25,8 +25,8 @@ jobs:
         run: npm install
 
       - name: Run Puppeteer Script
+        continue-on-error: true # ยอมให้รันต่อเพื่อไปขั้นตอน Upload แม้จะ Error
         env:
-          # ส่งค่า Secrets เข้าไปใน Script
           DTC_USERNAME: ${{ secrets.DTC_USERNAME }}
           DTC_PASSWORD: ${{ secrets.DTC_PASSWORD }}
           EMAIL_USER: ${{ secrets.EMAIL_USER }}
@@ -34,10 +34,11 @@ jobs:
           EMAIL_TO: ${{ secrets.EMAIL_TO }}
         run: node DTCREPORTDMS06TO18_Fixed.js
 
-      - name: Upload Error Screenshots
-        if: failure()
+      - name: Upload Debug Screenshots
+        if: always() # แก้ไข: ให้ทำงานเสมอ ไม่ว่าจะ Success หรือ Failed
         uses: actions/upload-artifact@v4
         with:
           name: debug-screenshots
           path: ./*.png
-          retention-days: 1
+          if-no-files-found: warn # แจ้งเตือนถ้าไม่เจอไฟล์ แต่ไม่ให้ Error
+          retention-days: 3
