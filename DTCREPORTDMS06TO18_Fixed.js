@@ -64,13 +64,11 @@ function getTodayFormatted() {
         await page.type('#txtpass', PASSWORD);
         
         console.log('   Clicking Login...');
-        // ใช้เทคนิค evaluate click ตาม code เก่าเพื่อความชัวร์
         await Promise.all([
             page.evaluate(() => {
                 const btn = document.getElementById('btnLogin');
                 if(btn) btn.click();
             }),
-            // รอจนกว่าหน้า login (ช่อง username) จะหายไป เป็นสัญญาณว่า Login สำเร็จ
             page.waitForFunction(() => !document.querySelector('#txtname'), { timeout: 60000 })
         ]);
         console.log('✅ Login Success');
@@ -79,36 +77,78 @@ function getTodayFormatted() {
         // Step 2: Navigate to Report (Direct URL)
         // ---------------------------------------------------------
         console.log('2️⃣ Step 2: Go to Report Page (Direct URL)...');
-        // ไปที่ URL รายงานสถานะ DMS โดยตรง
         await page.goto('https://gps.dtc.co.th/ultimate/Report/report_other_status.php', { waitUntil: 'domcontentloaded' });
         
-        // รอให้ Element หลักของหน้ารายงานโหลดเสร็จ (เช่น input วันที่)
         await page.waitForSelector('#date9', { visible: true, timeout: 60000 });
         console.log('✅ Report Page Loaded');
 
         // ---------------------------------------------------------
-        // Step 2.5: Select Truck "ทั้งหมด" (เพิ่มตาม request)
+        // Step 2.5: Select Truck "ทั้งหมด"
         // ---------------------------------------------------------
         console.log('   Selecting Truck "ทั้งหมด"...');
-        // รอให้ dropdown โหลดเสร็จก่อน
         await page.waitForSelector('#ddl_truck', { visible: true, timeout: 60000 });
 
-        // รัน Javascript ที่เตรียมมาในหน้าเว็บ
         await page.evaluate(() => {
             var selectElement = document.getElementById('ddl_truck'); 
-            var options = selectElement.options; 
-            for (var i = 0; i < options.length; i++) { 
-                if (options[i].text.includes('ทั้งหมด')) { 
-                    selectElement.value = options[i].value; 
-                    // Trigger change event เพื่อให้เว็บรู้ว่าค่าเปลี่ยน (สำคัญมากสำหรับเว็บสมัยใหม่)
-                    var event = new Event('change', { bubbles: true });
-                    selectElement.dispatchEvent(event);
-                    break; 
-                } 
+            if (selectElement) {
+                var options = selectElement.options; 
+                for (var i = 0; i < options.length; i++) { 
+                    // ตรวจสอบทั้งคำว่า 'ทั้งหมด' และ 'All' เผื่อระบบเปลี่ยนภาษา
+                    if (options[i].text.includes('ทั้งหมด') || options[i].text.toLowerCase().includes('all')) { 
+                        selectElement.value = options[i].value; 
+                        var event = new Event('change', { bubbles: true });
+                        selectElement.dispatchEvent(event);
+                        break; 
+                    } 
+                }
             }
         });
         console.log('✅ Truck "ทั้งหมด" Selected');
 
+        // ---------------------------------------------------------
+        // Step 2.6: Select Report Types (3 Items)
+        // ---------------------------------------------------------
+        console.log('   Selecting 3 Report Types...');
+        
+        // [ข้อควรระวัง] กรุณาแก้ไขข้อความใน Array ด้านล่างนี้ให้ตรงกับหน้าเว็บเป๊ะๆ
+        const reportTypesToSelect = [
+            "แจ้งเตือนมีความง่วงระดับ 1",  // <-- แก้ตรงนี้ (เช่น "เข้าศูนย์")
+            "แจ้งเตือนมีความง่วงระดับ 2",  // <-- แก้ตรงนี้
+            "แจ้งเตือนการหาวนอน"   // <-- แก้ตรงนี้
+        ];
+
+        for (const typeName of reportTypesToSelect) {
+            try {
+                // ค้นหา Label หรือ Checkbox ที่มีข้อความตรงกับที่เราต้องการ
+                // XPath นี้จะหา element ที่มี text ตรงกับชื่อ หรือ input ที่อยู่ใกล้ๆ text นั้น
+                const xpath = `//label[contains(text(), '${typeName}')] | //span[contains(text(), '${typeName}')] | //input[@type='checkbox' and ../text()[contains(.,'${typeName}')]]`;
+                const elements = await page.$$(`xpath/${xpath}`);
+                
+                if (elements.length > 0) {
+                    // ตรวจสอบก่อนว่ามันถูกติ๊กหรือยัง (ถ้ายัง ให้คลิก)
+                    const isChecked = await page.evaluate(el => {
+                        // ถ้า element เป็น input ก็เช็ค checked
+                        if (el.tagName === 'INPUT') return el.checked;
+                        // ถ้าเป็น label ลองหา input ข้างในหรือข้างๆ
+                        const input = el.querySelector('input') || document.getElementById(el.getAttribute('for'));
+                        return input ? input.checked : false;
+                    }, elements[0]);
+
+                    if (!isChecked) {
+                        await elements[0].click();
+                        console.log(`      Clicked: ${typeName}`);
+                    } else {
+                        console.log(`      Already checked: ${typeName}`);
+                    }
+                } else {
+                    console.log(`⚠️ Warning: Could not find report type option: "${typeName}"`);
+                }
+                await new Promise(r => setTimeout(r, 500)); // เว้นจังหวะนิดหน่อย
+            } catch (e) {
+                console.log(`⚠️ Error selecting ${typeName}:`, e.message);
+            }
+        }
+        console.log('✅ Report Types Selected');
 
         // ---------------------------------------------------------
         // Step 3: Setting Date Range & Search
@@ -118,7 +158,6 @@ function getTodayFormatted() {
         const startDateTime = `${todayStr} 06:00`;
         const endDateTime = `${todayStr} 18:00`;
 
-        // Clear และใส่วันที่
         await page.evaluate(() => document.getElementById('date9').value = '');
         await page.type('#date9', startDateTime);
 
@@ -127,17 +166,14 @@ function getTodayFormatted() {
         
         console.log('   Clicking Search to update report...');
         try {
-            // ปุ่มค้นหา
             const searchBtnXPath = "//*[contains(text(), 'ค้นหา')] | //span[contains(@class, 'icon-search')]";
             const searchBtns = await page.$$(`xpath/${searchBtnXPath}`);
             
             if (searchBtns.length > 0) {
                 await searchBtns[0].click();
             } else {
-                // Fallback selector
                 await page.click('td:nth-of-type(5) > span');
             }
-            // รอข้อมูลโหลดใหม่หลังจากกดค้นหา
             console.log('   Waiting for report data to update...');
             await new Promise(r => setTimeout(r, 10000)); 
         } catch (e) {
@@ -154,7 +190,6 @@ function getTodayFormatted() {
         const excelBtnSelector = '#btnexport, button[title="Excel"], ::-p-aria(Excel)';
         await page.waitForSelector(excelBtnSelector, { visible: true, timeout: 60000 });
         
-        // ใช้ evaluate click เพื่อความชัวร์เหมือนปุ่ม Login
         await page.evaluate(() => {
             const btn = document.querySelector('#btnexport') || document.querySelector('button[title="Excel"]');
             if(btn) btn.click();
