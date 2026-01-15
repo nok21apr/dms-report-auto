@@ -12,7 +12,7 @@ function getTodayFormatted() {
 }
 
 (async () => {
-    // --- ส่วนการรับค่าจาก Secrets (Environment Variables) ---
+    // --- ส่วนการรับค่าจาก Secrets ---
     const USERNAME = process.env.DTC_USERNAME;
     const PASSWORD = process.env.DTC_PASSWORD;
     const EMAIL_USER = process.env.EMAIL_USER;
@@ -20,19 +20,18 @@ function getTodayFormatted() {
     const EMAIL_TO   = process.env.EMAIL_TO;
 
     if (!USERNAME || !PASSWORD || !EMAIL_USER || !EMAIL_PASS || !EMAIL_TO) {
-        console.error('Error: Missing required secrets. Please check your GitHub Secrets configuration.');
+        console.error('Error: Missing required secrets.');
         process.exit(1);
     }
 
     console.log('Launching browser...');
-
     const downloadPath = path.resolve('./downloads');
     if (!fs.existsSync(downloadPath)) {
         fs.mkdirSync(downloadPath);
     }
 
     const browser = await puppeteer.launch({
-        headless: true, // v23+ ใช้ true ได้เลย (เป็น New Headless แล้ว)
+        headless: true,
         args: [
             '--no-sandbox',
             '--disable-setuid-sandbox',
@@ -41,7 +40,8 @@ function getTodayFormatted() {
     });
     
     const page = await browser.newPage();
-    const timeout = 60000;
+    // เพิ่ม Timeout รวมเป็น 3 นาที (180s) เผื่อเว็บช้ามาก
+    const timeout = 180000; 
     page.setDefaultTimeout(timeout);
     
     const client = await page.target().createCDPSession();
@@ -67,35 +67,57 @@ function getTodayFormatted() {
         console.log('Submitting login...');
         await page.keyboard.press('Enter');
 
-        console.log('Waiting 30 seconds for page data to load...');
-        await new Promise(r => setTimeout(r, 30000));
+        // --- แก้ไขจุดที่ 1: เพิ่มเวลาการรอโหลดข้อมูลเป็น 60 วินาที ---
+        console.log('Waiting 60 seconds for page data to load completely...');
+        await new Promise(r => setTimeout(r, 60000));
+
+        // --- แก้ไขจุดที่ 2: เช็คว่า Overlay (ถ้ามี) หายไปแล้ว และ Sidebar พร้อมใช้งาน ---
+        console.log('Checking if Dashboard is ready...');
+        try {
+            // รอให้ Sidebar ปรากฏ
+            await page.waitForSelector('#sidebar', { visible: true, timeout: 30000 });
+        } catch (e) {
+            console.log('Warning: Sidebar taking long to appear...');
+        }
 
         // --- 2. เข้าเมนูรายงาน ---
         console.log('Clicking Report Tab...');
         const reportSelector = '#sidebar li:nth-of-type(5) i';
+        
+        // รอจนกว่าปุ่มจะคลิกได้ (Clickable)
         await page.waitForSelector(reportSelector, { visible: true });
-        await page.$eval(reportSelector, el => el.click());
+        
+        // ใช้การคลิก 2 แบบเผื่อไว้ (Click ปกติ และ Evaluate Click)
+        try {
+            await page.click(reportSelector);
+        } catch (e) {
+            await page.$eval(reportSelector, el => el.click());
+        }
 
         // --- 3. เลือกรายงาน DMS ---
         console.log('Clicking DMS Status Report...');
-        await new Promise(r => setTimeout(r, 2000)); 
+        await new Promise(r => setTimeout(r, 3000)); // รอเมนูเลื่อนลงมา
 
         try {
              const dmsReportXPath = "//*[contains(text(), 'รายงานสถานะ DMS')]";
-             // แก้ไข: ใช้ page.$$ แทน page.$x สำหรับ Puppeteer v23+
+             // ใช้ page.$$ สำหรับ Puppeteer v23+
              const elements = await page.$$(`xpath/${dmsReportXPath}`);
              
              if (elements.length > 0) {
+                 // ตรวจสอบว่า element มองเห็นได้ (visible) ก่อนคลิก
+                 // (บางทีเมนูยังไม่กางออกมา)
+                 await new Promise(r => setTimeout(r, 1000)); 
                  await elements[0].click();
              } else {
                  throw new Error("Link not found");
              }
         } catch (e) {
-            console.log("Using fallback selector...");
+            console.log("Using fallback selector for DMS link...");
+            // Selector สำรอง
             await page.click('div:nth-of-type(5) > div:nth-of-type(2) li:nth-of-type(1) > a');
         }
 
-        await new Promise(r => setTimeout(r, 5000));
+        await new Promise(r => setTimeout(r, 10000)); // รอหน้า Report โหลด (เพิ่มเป็น 10 วิ)
 
         // --- 3.5 เลือกช่วงเวลา 06:00 - 18:00 ของวันนี้ ---
         console.log('Setting Date Range: 06:00 - 18:00...');
@@ -103,18 +125,18 @@ function getTodayFormatted() {
         const startDateTime = `${todayStr} 06:00`;
         const endDateTime = `${todayStr} 18:00`;
 
-        await page.waitForSelector('#date9');
+        // รอช่องวันที่พร้อม
+        await page.waitForSelector('#date9', { visible: true });
+        
         await page.evaluate(() => document.getElementById('date9').value = '');
         await page.type('#date9', startDateTime);
 
-        await page.waitForSelector('#date10');
         await page.evaluate(() => document.getElementById('date10').value = '');
         await page.type('#date10', endDateTime);
         
         console.log('Clicking Search to update report...');
         try {
             const searchBtnXPath = "//*[contains(text(), 'ค้นหา')] | //span[contains(@class, 'icon-search')] | //i[contains(@class, 'icon-search')]";
-            // แก้ไข: ใช้ page.$$ แทน page.$x สำหรับ Puppeteer v23+
             const searchBtns = await page.$$(`xpath/${searchBtnXPath}`);
             
             if (searchBtns.length > 0) {
@@ -122,7 +144,9 @@ function getTodayFormatted() {
             } else {
                 await page.click('td:nth-of-type(5) > span');
             }
-            await new Promise(r => setTimeout(r, 5000));
+            // รอข้อมูลโหลดใหม่หลังจากกดค้นหา (สำคัญ)
+            console.log('Waiting for report data to update...');
+            await new Promise(r => setTimeout(r, 10000)); 
         } catch (e) {
             console.log('Warning: Could not click Search button.', e.message);
         }
@@ -133,11 +157,11 @@ function getTodayFormatted() {
         cleanDownloadFolder(downloadPath);
 
         const excelBtnSelector = '#btnexport, button[title="Excel"], ::-p-aria(Excel)';
-        await page.waitForSelector(excelBtnSelector, { visible: true, timeout: 10000 });
+        await page.waitForSelector(excelBtnSelector, { visible: true, timeout: 15000 });
         await page.click(excelBtnSelector);
         
-        console.log('Waiting for download (15s)...');
-        await new Promise(r => setTimeout(r, 15000));
+        console.log('Waiting for download (20s)...');
+        await new Promise(r => setTimeout(r, 20000));
 
         // --- 5. ส่ง Email และ ลบไฟล์ ---
         console.log('Processing email...');
