@@ -82,16 +82,46 @@ function getTodayFormatted() {
 
         // --- 2. เข้าเมนูรายงาน ---
         console.log('Clicking Report Tab...');
-        const reportSelector = '#sidebar li:nth-of-type(5) i';
         
-        // รอจนกว่าปุ่มจะคลิกได้ (Clickable)
-        await page.waitForSelector(reportSelector, { visible: true });
-        
-        // ใช้การคลิก 2 แบบเผื่อไว้ (Click ปกติ และ Evaluate Click)
+        // รอให้ Sidebar ทำงาน
+        await page.waitForSelector('#sidebar', { visible: true, timeout: 60000 });
+
+        // พยายามคลิกเมนู "รายงาน" โดยใช้ 3 วิธี เพื่อความชัวร์
+        let reportClicked = false;
         try {
-            await page.click(reportSelector);
-        } catch (e) {
-            await page.$eval(reportSelector, el => el.click());
+            // วิธีที่ 1: หาจากข้อความ "รายงาน" ใน Sidebar (แม่นยำที่สุด)
+            // ค้นหา span หรือ a tag ที่มีคำว่า "รายงาน"
+            const reportXPath = "//*[@id='sidebar']//span[contains(text(), 'รายงาน')] | //*[@id='sidebar']//a[contains(text(), 'รายงาน')]";
+            const reportElements = await page.$$(`xpath/${reportXPath}`);
+            
+            if (reportElements.length > 0) {
+                console.log('Found "Report" text menu, clicking...');
+                // ต้องรอให้ element visible ก่อน
+                await new Promise(r => setTimeout(r, 500));
+                await reportElements[0].click();
+                reportClicked = true;
+            }
+        } catch (e) { 
+            console.log('Method 1 (Text search) failed:', e.message); 
+        }
+
+        if (!reportClicked) {
+            try {
+                // วิธีที่ 2: ใช้ Selector เดิม (ลำดับที่ 5) โดยคลิกที่ link tag <a>
+                console.log('Using fallback selector (nth-of-type 5)...');
+                const fallbackSelector = '#sidebar li:nth-of-type(5) a';
+                await page.waitForSelector(fallbackSelector, { visible: true, timeout: 5000 });
+                await page.click(fallbackSelector);
+                reportClicked = true;
+            } catch (e) { 
+                console.log('Method 2 (CSS Selector a tag) failed'); 
+            }
+        }
+
+        if (!reportClicked) {
+            // วิธีที่ 3: คลิกที่ icon <i> (แบบเดิมสุด)
+            console.log('Trying to click icon (last resort)...');
+            await page.click('#sidebar li:nth-of-type(5) i');
         }
 
         // --- 3. เลือกรายงาน DMS ---
