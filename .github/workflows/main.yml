@@ -19,7 +19,7 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-          cache: 'npm'
+          # cache: 'npm' # ลบออกชั่วคราวเนื่องจากไม่มี package-lock.json
 
       - name: Install Dependencies
         run: npm install
@@ -41,4 +41,4 @@ jobs:
           name: debug-screenshots
           path: ./*.png
           if-no-files-found: warn
-          retention-days: 1
+          retention-days: 3
