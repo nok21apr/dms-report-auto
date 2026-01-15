@@ -83,17 +83,25 @@ function getTodayFormatted() {
         console.log('✅ Report Page Loaded');
 
         // ---------------------------------------------------------
-        // Step 2.5: Select Truck "ทั้งหมด"
+        // Step 2.5: Select Truck "ทั้งหมด" (Robust Version)
         // ---------------------------------------------------------
         console.log('   Selecting Truck "ทั้งหมด"...');
         await page.waitForSelector('#ddl_truck', { visible: true, timeout: 60000 });
 
+        // รอจนกว่า Option "ทั้งหมด" จะปรากฏจริง (ป้องกัน Dropdown โหลดไม่เสร็จ)
+        await page.waitForFunction(() => {
+            const select = document.getElementById('ddl_truck');
+            if (!select) return false;
+            // เช็คว่ามี option ที่มีคำว่า "ทั้งหมด" หรือ "All" หรือไม่
+            return Array.from(select.options).some(opt => opt.text.includes('ทั้งหมด') || opt.text.toLowerCase().includes('all'));
+        }, { timeout: 60000 });
+
+        // ทำการเลือกจริง
         await page.evaluate(() => {
             var selectElement = document.getElementById('ddl_truck'); 
             if (selectElement) {
                 var options = selectElement.options; 
                 for (var i = 0; i < options.length; i++) { 
-                    // ตรวจสอบทั้งคำว่า 'ทั้งหมด' และ 'All' เผื่อระบบเปลี่ยนภาษา
                     if (options[i].text.includes('ทั้งหมด') || options[i].text.toLowerCase().includes('all')) { 
                         selectElement.value = options[i].value; 
                         var event = new Event('change', { bubbles: true });
@@ -110,27 +118,22 @@ function getTodayFormatted() {
         // ---------------------------------------------------------
         console.log('   Selecting 3 Report Types...');
         
-        // [ข้อควรระวัง] กรุณาแก้ไขข้อความใน Array ด้านล่างนี้ให้ตรงกับหน้าเว็บเป๊ะๆ
+        // รายชื่อรายงานที่ต้องการเลือก (ตามที่คุณระบุ)
         const reportTypesToSelect = [
-            "แจ้งเตือนมีความง่วงระดับ 1",  // <-- แก้ตรงนี้ (เช่น "เข้าศูนย์")
-            "แจ้งเตือนมีความง่วงระดับ 2",  // <-- แก้ตรงนี้
-            "แจ้งเตือนการหาวนอน"   // <-- แก้ตรงนี้
+            "แจ้งเตือนมีความง่วงระดับ 1",
+            "แจ้งเตือนมีความง่วงระดับ 2",
+            "แจ้งเตือนการหาวนอน"
         ];
 
         for (const typeName of reportTypesToSelect) {
             try {
-                // ค้นหา Label หรือ Checkbox ที่มีข้อความตรงกับที่เราต้องการ
-                // XPath นี้จะหา element ที่มี text ตรงกับชื่อ หรือ input ที่อยู่ใกล้ๆ text นั้น
-                const xpath = `//label[contains(text(), '${typeName}')] | //span[contains(text(), '${typeName}')] | //input[@type='checkbox' and ../text()[contains(.,'${typeName}')]]`;
+                // ใช้ XPath แบบ normalize-space เพื่อตัดช่องว่างส่วนเกินออก ทำให้หาเจอแม่นยำขึ้น
+                const xpath = `//label[contains(normalize-space(.), '${typeName}')] | //span[contains(normalize-space(.), '${typeName}')]`;
                 const elements = await page.$$(`xpath/${xpath}`);
                 
                 if (elements.length > 0) {
-                    // ตรวจสอบก่อนว่ามันถูกติ๊กหรือยัง (ถ้ายัง ให้คลิก)
                     const isChecked = await page.evaluate(el => {
-                        // ถ้า element เป็น input ก็เช็ค checked
-                        if (el.tagName === 'INPUT') return el.checked;
-                        // ถ้าเป็น label ลองหา input ข้างในหรือข้างๆ
-                        const input = el.querySelector('input') || document.getElementById(el.getAttribute('for'));
+                        const input = el.tagName === 'INPUT' ? el : (el.querySelector('input') || document.getElementById(el.getAttribute('for')));
                         return input ? input.checked : false;
                     }, elements[0]);
 
@@ -142,8 +145,13 @@ function getTodayFormatted() {
                     }
                 } else {
                     console.log(`⚠️ Warning: Could not find report type option: "${typeName}"`);
+                    // [Debug] ถ้าหาไม่เจอ ให้ลองปริ้นท์รายการที่มีอยู่ทั้งหมดออกมาดูใน Log
+                    /*
+                    const allLabels = await page.evaluate(() => Array.from(document.querySelectorAll('label, span')).map(el => el.textContent.trim()));
+                    console.log('Available options:', allLabels.slice(0, 20)); // ปริ้นท์มาดูบางส่วน
+                    */
                 }
-                await new Promise(r => setTimeout(r, 500)); // เว้นจังหวะนิดหน่อย
+                await new Promise(r => setTimeout(r, 500)); 
             } catch (e) {
                 console.log(`⚠️ Error selecting ${typeName}:`, e.message);
             }
