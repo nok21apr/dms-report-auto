@@ -40,161 +40,109 @@ function getTodayFormatted() {
     });
     
     const page = await browser.newPage();
-    // เพิ่ม Timeout รวมเป็น 3 นาที (180s) เผื่อเว็บช้ามาก
-    const timeout = 180000; 
-    page.setDefaultTimeout(timeout);
     
+    // --- Setup ตาม Code เก่า ---
+    // Timeout 5 นาที
+    page.setDefaultNavigationTimeout(300000);
+    page.setDefaultTimeout(300000);
+
+    await page.emulateTimezone('Asia/Bangkok');
     const client = await page.target().createCDPSession();
-    await client.send('Page.setDownloadBehavior', {
-        behavior: 'allow',
-        downloadPath: downloadPath,
-    });
+    await client.send('Page.setDownloadBehavior', { behavior: 'allow', downloadPath: downloadPath });
 
     await page.setViewport({ width: 1920, height: 1080 });
 
     try {
-        // --- 1. Login ---
-        console.log('Navigating to login page...');
-        await page.goto('https://gps.dtc.co.th/ultimate/index.php', { waitUntil: 'networkidle0' });
-
-        await page.waitForSelector('#txtname');
+        // ---------------------------------------------------------
+        // Step 1: Login
+        // ---------------------------------------------------------
+        console.log('1️⃣ Step 1: Login...');
+        await page.goto('https://gps.dtc.co.th/ultimate/index.php', { waitUntil: 'domcontentloaded' });
+        
+        await page.waitForSelector('#txtname', { visible: true, timeout: 60000 });
         await page.type('#txtname', USERNAME);
-        
-        await page.keyboard.press('Tab');
-        await new Promise(r => setTimeout(r, 500));
         await page.type('#txtpass', PASSWORD);
-
-        console.log('Submitting login...');
-        await page.keyboard.press('Enter');
-
-        // --- แก้ไขจุดที่ 1: เพิ่มเวลาการรอโหลดข้อมูลเป็น 60 วินาที ---
-        console.log('Waiting 60 seconds for page data to load completely...');
-        await new Promise(r => setTimeout(r, 60000));
-
-        // --- แก้ไขจุดที่ 2: เช็คว่า Overlay (ถ้ามี) หายไปแล้ว และ Sidebar พร้อมใช้งาน ---
-        console.log('Checking if Dashboard is ready...');
-        try {
-            // รอให้ Sidebar ปรากฏ
-            await page.waitForSelector('#sidebar', { visible: true, timeout: 30000 });
-        } catch (e) {
-            console.log('Warning: Sidebar taking long to appear...');
-        }
-
-        // --- 2. เข้าเมนูรายงาน ---
-        console.log('Clicking Report Tab...');
         
-        // รอให้ Sidebar ทำงาน
-        await page.waitForSelector('#sidebar', { visible: true, timeout: 60000 });
+        console.log('   Clicking Login...');
+        // ใช้เทคนิค evaluate click ตาม code เก่าเพื่อความชัวร์
+        await Promise.all([
+            page.evaluate(() => {
+                const btn = document.getElementById('btnLogin');
+                if(btn) btn.click();
+            }),
+            // รอจนกว่าหน้า login (ช่อง username) จะหายไป เป็นสัญญาณว่า Login สำเร็จ
+            page.waitForFunction(() => !document.querySelector('#txtname'), { timeout: 60000 })
+        ]);
+        console.log('✅ Login Success');
 
-        // พยายามคลิกเมนู "รายงาน" โดยใช้ 3 วิธี เพื่อความชัวร์
-        let reportClicked = false;
-        try {
-            // วิธีที่ 1: หาจากข้อความ "รายงาน" ใน Sidebar (แม่นยำที่สุด)
-            // ค้นหา span หรือ a tag ที่มีคำว่า "รายงาน"
-            const reportXPath = "//*[@id='sidebar']//span[contains(text(), 'รายงาน')] | //*[@id='sidebar']//a[contains(text(), 'รายงาน')]";
-            const reportElements = await page.$$(`xpath/${reportXPath}`);
-            
-            if (reportElements.length > 0) {
-                console.log('Found "Report" text menu, clicking...');
-                // ต้องรอให้ element visible ก่อน
-                await new Promise(r => setTimeout(r, 500));
-                await reportElements[0].click();
-                reportClicked = true;
-            }
-        } catch (e) { 
-            console.log('Method 1 (Text search) failed:', e.message); 
-        }
+        // ---------------------------------------------------------
+        // Step 2: Navigate to Report (Direct URL)
+        // ---------------------------------------------------------
+        console.log('2️⃣ Step 2: Go to Report Page (Direct URL)...');
+        // ไปที่ URL รายงานสถานะ DMS โดยตรง
+        await page.goto('https://gps.dtc.co.th/ultimate/Report/report_other_status.php', { waitUntil: 'domcontentloaded' });
+        
+        // รอให้ Element หลักของหน้ารายงานโหลดเสร็จ (เช่น input วันที่)
+        await page.waitForSelector('#date9', { visible: true, timeout: 60000 });
+        console.log('✅ Report Page Loaded');
 
-        if (!reportClicked) {
-            try {
-                // วิธีที่ 2: ใช้ Selector เดิม (ลำดับที่ 5) โดยคลิกที่ link tag <a>
-                console.log('Using fallback selector (nth-of-type 5)...');
-                const fallbackSelector = '#sidebar li:nth-of-type(5) a';
-                await page.waitForSelector(fallbackSelector, { visible: true, timeout: 5000 });
-                await page.click(fallbackSelector);
-                reportClicked = true;
-            } catch (e) { 
-                console.log('Method 2 (CSS Selector a tag) failed'); 
-            }
-        }
-
-        if (!reportClicked) {
-            // วิธีที่ 3: คลิกที่ icon <i> (แบบเดิมสุด)
-            console.log('Trying to click icon (last resort)...');
-            await page.click('#sidebar li:nth-of-type(5) i');
-        }
-
-        // --- 3. เลือกรายงาน DMS ---
-        console.log('Clicking DMS Status Report...');
-        await new Promise(r => setTimeout(r, 3000)); // รอเมนูเลื่อนลงมา
-
-        try {
-             const dmsReportXPath = "//*[contains(text(), 'รายงานสถานะ DMS')]";
-             // ใช้ page.$$ สำหรับ Puppeteer v23+
-             const elements = await page.$$(`xpath/${dmsReportXPath}`);
-             
-             if (elements.length > 0) {
-                 // ตรวจสอบว่า element มองเห็นได้ (visible) ก่อนคลิก
-                 // (บางทีเมนูยังไม่กางออกมา)
-                 await new Promise(r => setTimeout(r, 1000)); 
-                 await elements[0].click();
-             } else {
-                 throw new Error("Link not found");
-             }
-        } catch (e) {
-            console.log("Using fallback selector for DMS link...");
-            // Selector สำรอง
-            await page.click('div:nth-of-type(5) > div:nth-of-type(2) li:nth-of-type(1) > a');
-        }
-
-        await new Promise(r => setTimeout(r, 10000)); // รอหน้า Report โหลด (เพิ่มเป็น 10 วิ)
-
-        // --- 3.5 เลือกช่วงเวลา 06:00 - 18:00 ของวันนี้ ---
-        console.log('Setting Date Range: 06:00 - 18:00...');
+        // ---------------------------------------------------------
+        // Step 3: Setting Date Range & Search
+        // ---------------------------------------------------------
+        console.log('3️⃣ Step 3: Setting Date Range 06:00 - 18:00...');
         const todayStr = getTodayFormatted();
         const startDateTime = `${todayStr} 06:00`;
         const endDateTime = `${todayStr} 18:00`;
 
-        // รอช่องวันที่พร้อม
-        await page.waitForSelector('#date9', { visible: true });
-        
+        // Clear และใส่วันที่
         await page.evaluate(() => document.getElementById('date9').value = '');
         await page.type('#date9', startDateTime);
 
         await page.evaluate(() => document.getElementById('date10').value = '');
         await page.type('#date10', endDateTime);
         
-        console.log('Clicking Search to update report...');
+        console.log('   Clicking Search to update report...');
         try {
-            const searchBtnXPath = "//*[contains(text(), 'ค้นหา')] | //span[contains(@class, 'icon-search')] | //i[contains(@class, 'icon-search')]";
+            // ปุ่มค้นหา
+            const searchBtnXPath = "//*[contains(text(), 'ค้นหา')] | //span[contains(@class, 'icon-search')]";
             const searchBtns = await page.$$(`xpath/${searchBtnXPath}`);
             
             if (searchBtns.length > 0) {
                 await searchBtns[0].click();
             } else {
+                // Fallback selector
                 await page.click('td:nth-of-type(5) > span');
             }
-            // รอข้อมูลโหลดใหม่หลังจากกดค้นหา (สำคัญ)
-            console.log('Waiting for report data to update...');
+            // รอข้อมูลโหลดใหม่หลังจากกดค้นหา
+            console.log('   Waiting for report data to update...');
             await new Promise(r => setTimeout(r, 10000)); 
         } catch (e) {
-            console.log('Warning: Could not click Search button.', e.message);
+            console.log('⚠️ Warning: Could not click Search button.', e.message);
         }
 
-        // --- 4. กดปุ่ม Excel (Download) ---
-        console.log('Clicking Export/Excel...');
+        // ---------------------------------------------------------
+        // Step 4: Export Excel
+        // ---------------------------------------------------------
+        console.log('4️⃣ Step 4: Clicking Export/Excel...');
         
         cleanDownloadFolder(downloadPath);
 
         const excelBtnSelector = '#btnexport, button[title="Excel"], ::-p-aria(Excel)';
-        await page.waitForSelector(excelBtnSelector, { visible: true, timeout: 15000 });
-        await page.click(excelBtnSelector);
+        await page.waitForSelector(excelBtnSelector, { visible: true, timeout: 60000 });
         
-        console.log('Waiting for download (20s)...');
+        // ใช้ evaluate click เพื่อความชัวร์เหมือนปุ่ม Login
+        await page.evaluate(() => {
+            const btn = document.querySelector('#btnexport') || document.querySelector('button[title="Excel"]');
+            if(btn) btn.click();
+        });
+        
+        console.log('   Waiting for download (20s)...');
         await new Promise(r => setTimeout(r, 20000));
 
-        // --- 5. ส่ง Email และ ลบไฟล์ ---
-        console.log('Processing email...');
+        // ---------------------------------------------------------
+        // Step 5: Email & Cleanup
+        // ---------------------------------------------------------
+        console.log('5️⃣ Step 5: Processing email...');
         
         const recentFile = getMostRecentFile(downloadPath);
         
@@ -211,23 +159,23 @@ function getTodayFormatted() {
                 attachmentPath: filePath
             });
 
-            console.log('Deleting downloaded file...');
+            console.log('   Deleting downloaded file...');
             try {
                 fs.unlinkSync(filePath);
-                console.log('File deleted successfully.');
+                console.log('✅ File deleted successfully.');
             } catch (err) {
-                console.error('Error deleting file:', err);
+                console.error('⚠️ Error deleting file:', err);
             }
 
         } else {
-            console.log('No file downloaded to send.');
+            console.log('❌ No file downloaded to send.');
             throw new Error('Download failed or no file found');
         }
 
-        console.log('Script completed.');
+        console.log('🎉 Script completed successfully.');
 
     } catch (error) {
-        console.error('Error occurred:', error);
+        console.error('❌ Error occurred:', error);
         await page.screenshot({ path: 'error_screenshot.png' });
         process.exit(1);
     } finally {
@@ -250,7 +198,7 @@ async function sendEmail({ user, pass, to, subject, attachmentPath }) {
     };
 
     const info = await transporter.sendMail(mailOptions);
-    console.log('Email sent: ' + info.response);
+    console.log('📧 Email sent: ' + info.response);
 }
 
 const getMostRecentFile = (dir) => {
