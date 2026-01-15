@@ -31,7 +31,7 @@ function getTodayFormatted() {
     }
 
     const browser = await puppeteer.launch({
-        headless: true,
+        headless: true, // ตั้งเป็น false เพื่อดูการทำงานตอนเทสได้
         args: [
             '--no-sandbox',
             '--disable-setuid-sandbox',
@@ -41,7 +41,7 @@ function getTodayFormatted() {
     
     const page = await browser.newPage();
     
-    // --- Setup ตาม Code เก่า ---
+    // --- Setup ---
     // Timeout 5 นาที
     page.setDefaultNavigationTimeout(300000);
     page.setDefaultTimeout(300000);
@@ -83,20 +83,17 @@ function getTodayFormatted() {
         console.log('✅ Report Page Loaded');
 
         // ---------------------------------------------------------
-        // Step 2.5: Select Truck "ทั้งหมด" (Robust Version)
+        // Step 2.5: Select Truck "ทั้งหมด"
         // ---------------------------------------------------------
         console.log('   Selecting Truck "ทั้งหมด"...');
         await page.waitForSelector('#ddl_truck', { visible: true, timeout: 60000 });
 
-        // รอจนกว่า Option "ทั้งหมด" จะปรากฏจริง (ป้องกัน Dropdown โหลดไม่เสร็จ)
         await page.waitForFunction(() => {
             const select = document.getElementById('ddl_truck');
             if (!select) return false;
-            // เช็คว่ามี option ที่มีคำว่า "ทั้งหมด" หรือ "All" หรือไม่
             return Array.from(select.options).some(opt => opt.text.includes('ทั้งหมด') || opt.text.toLowerCase().includes('all'));
         }, { timeout: 60000 });
 
-        // ทำการเลือกจริง
         await page.evaluate(() => {
             var selectElement = document.getElementById('ddl_truck'); 
             if (selectElement) {
@@ -114,49 +111,95 @@ function getTodayFormatted() {
         console.log('✅ Truck "ทั้งหมด" Selected');
 
         // ---------------------------------------------------------
-        // Step 2.6: Select Report Types (3 Items)
+        // Step 2.6: Select Report Types (Force Click JS Method)
         // ---------------------------------------------------------
         console.log('   Selecting 3 Report Types...');
         
-        // รายชื่อรายงานที่ต้องการเลือก (ตามที่คุณระบุ)
-        const reportTypesToSelect = [
-            "แจ้งเตือนมีความง่วงระดับ 1",
-            "แจ้งเตือนมีความง่วงระดับ 2",
-            "แจ้งเตือนการหาวนอน"
-        ];
-
-        for (const typeName of reportTypesToSelect) {
-            try {
-                // ใช้ XPath แบบ normalize-space เพื่อตัดช่องว่างส่วนเกินออก ทำให้หาเจอแม่นยำขึ้น
-                const xpath = `//label[contains(normalize-space(.), '${typeName}')] | //span[contains(normalize-space(.), '${typeName}')]`;
-                const elements = await page.$$(`xpath/${xpath}`);
+        // 1. พยายามเปิด Dropdown ก่อน (สำคัญมาก เพราะถ้าไม่เปิด Element อาจจะยังไม่ถูกสร้าง)
+        try {
+            console.log('      Attempting to open Status Dropdown...');
+            // ลองคลิกที่ element ที่น่าจะเป็นตัวเปิด Dropdown สถานะ (เดาจากชื่อไฟล์ ddl_status หรือ label)
+            await page.evaluate(() => {
+                // ลองหา ddl_status, ddlStatus หรือ element ที่ใกล้กับคำว่า "สถานะ"
+                const possibleIds = ['ddl_status', 'ddlStatus', 'status_list', 'div_status'];
+                let opened = false;
                 
-                if (elements.length > 0) {
-                    const isChecked = await page.evaluate(el => {
-                        const input = el.tagName === 'INPUT' ? el : (el.querySelector('input') || document.getElementById(el.getAttribute('for')));
-                        return input ? input.checked : false;
-                    }, elements[0]);
-
-                    if (!isChecked) {
-                        await elements[0].click();
-                        console.log(`      Clicked: ${typeName}`);
-                    } else {
-                        console.log(`      Already checked: ${typeName}`);
-                    }
-                } else {
-                    console.log(`⚠️ Warning: Could not find report type option: "${typeName}"`);
-                    // [Debug] ถ้าหาไม่เจอ ให้ลองปริ้นท์รายการที่มีอยู่ทั้งหมดออกมาดูใน Log
-                    /*
-                    const allLabels = await page.evaluate(() => Array.from(document.querySelectorAll('label, span')).map(el => el.textContent.trim()));
-                    console.log('Available options:', allLabels.slice(0, 20)); // ปริ้นท์มาดูบางส่วน
-                    */
+                // ลองคลิก ID ที่น่าจะเป็นไปได้
+                for(let id of possibleIds) {
+                    const el = document.getElementById(id);
+                    if(el) { el.click(); opened = true; break; }
                 }
-                await new Promise(r => setTimeout(r, 500)); 
+                
+                // ถ้ายังไม่เจอ ลองหาจาก Label
+                if(!opened) {
+                    const labels = Array.from(document.querySelectorAll('label, span, div'));
+                    const statusLabel = labels.find(l => l.innerText && (l.innerText.includes('สถานะ') || l.innerText.includes('ชนิดรายงาน')));
+                    if(statusLabel) {
+                        // คลิก element ถัดไป หรือ input ใกล้ๆ
+                        const nextEl = statusLabel.nextElementSibling || statusLabel.parentElement.querySelector('div[class*="arrow"], div[class*="dropdown"]');
+                        if(nextEl) nextEl.click();
+                    }
+                }
+            });
+            // รอให้ Animation ของ Dropdown ทำงานสักนิด
+            await new Promise(r => setTimeout(r, 1000));
+        } catch(e) {
+            console.log('      ⚠️ Could not explicitly open dropdown (might be already open or non-standard).');
+        }
+
+        // 2. ใช้ JS ค้นหา Text และคลิกเลย (Force Click)
+        const reportKeywords = ["ระดับ 1", "ระดับ 2", "หาวนอน"];
+        
+        for (const keyword of reportKeywords) {
+            try {
+                console.log(`      Searching for "${keyword}"...`);
+                
+                const found = await page.evaluate((kw) => {
+                    // ใช้ XPath ค้นหา text node ที่มีคำนั้นอยู่
+                    const xpath = `//*[contains(text(), '${kw}')]`;
+                    const result = document.evaluate(xpath, document, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null);
+                    
+                    if (result.snapshotLength > 0) {
+                        // วนลูปหา element ที่เหมาะสมที่สุดที่จะคลิก (เช่น div, span, li)
+                        for (let i = 0; i < result.snapshotLength; i++) {
+                            let el = result.snapshotItem(i);
+                            
+                            // เดินขึ้นไปหา Container ที่คลิกได้ (เช่นถ้า text อยู่ใน span เล็กๆ ให้คลิก div ที่หุ้มอยู่)
+                            // เช็คว่าเป็น Dropdown Item หรือ Checkbox หรือไม่
+                            while (el && el.tagName !== 'BODY') {
+                                // ถ้าเจอ Checkbox
+                                if (el.tagName === 'INPUT' && el.type === 'checkbox') {
+                                    if(!el.checked) el.click();
+                                    return true;
+                                }
+                                // ถ้าเจอ List Item (div/li)
+                                if (el.tagName === 'LI' || (el.tagName === 'DIV' && (el.className.includes('item') || el.className.includes('list')))) {
+                                    el.click();
+                                    return true;
+                                }
+                                el = el.parentElement;
+                            }
+                            
+                            // ถ้าไม่เจอ parent ที่ชัดเจน ให้คลิกที่ตัว element เองเลย
+                            result.snapshotItem(i).click();
+                            return true;
+                        }
+                    }
+                    return false;
+                }, keyword);
+
+                if (found) {
+                    console.log(`      ✅ Clicked option containing "${keyword}"`);
+                } else {
+                    console.log(`      ⚠️ Warning: Text "${keyword}" not found in DOM.`);
+                }
+                
+                await new Promise(r => setTimeout(r, 500)); // เว้นจังหวะ
             } catch (e) {
-                console.log(`⚠️ Error selecting ${typeName}:`, e.message);
+                console.log(`      ❌ Error processing "${keyword}":`, e.message);
             }
         }
-        console.log('✅ Report Types Selected');
+        console.log('✅ Report Types Selection Finished');
 
         // ---------------------------------------------------------
         // Step 3: Setting Date Range & Search
