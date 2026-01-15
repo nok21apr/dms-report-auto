@@ -111,55 +111,53 @@ function getTodayFormatted() {
         console.log('✅ Truck "ทั้งหมด" Selected');
 
         // ---------------------------------------------------------
-        // Step 2.6: Select Report Types (Type & Enter Mode from Recording)
+        // Step 2.6: Select Report Types (Using #s2id_ddlharsh)
         // ---------------------------------------------------------
-        console.log('   Selecting 3 Report Types (Search & Enter)...');
+        console.log('   Selecting 3 Report Types (via #s2id_ddlharsh)...');
         
-        // ID ของ Input ค้นหาใน Select2 (อ้างอิงจากไฟล์ Recording ที่คุณส่งมา: #s2id_autogen3)
-        // และเพิ่ม Selector สำรองเผื่อเลขเปลี่ยน (#s2id_ddlharsh input)
-        const select2InputSelector = '#s2id_autogen3, #s2id_ddlharsh input.select2-input, .select2-search-field input';
+        // Selector ที่คุณระบุ: #s2id_ddlharsh (Container ของ Select2)
+        const select2ContainerSelector = '#s2id_ddlharsh';
+        // Input ที่อยู่ภายใน Container นี้ (สำหรับพิมพ์ค้นหา)
+        const select2InputSelector = '#s2id_ddlharsh input'; 
         
-        // รายการคำค้นหา 3 รายการ
         const searchKeywords = [
-            "ความง่วงระดับ 1",  // ค้นหา: แจ้งเตือนมีความง่วงระดับ 1
-            "ความง่วงระดับ 2",  // ค้นหา: แจ้งเตือนมีความง่วงระดับ 2
-            "หาว"       // ค้นหา: แจ้งเตือนการหาวนอน
+            "ความง่วงระดับ 1", 
+            "ความง่วงระดับ 2",
+            "หาว"       
         ];
 
         try {
-            // รอให้ช่อง Input ค้นหาปรากฏ
-            await page.waitForSelector(select2InputSelector, { visible: true, timeout: 30000 });
+            // รอให้ Container ปรากฏ
+            await page.waitForSelector(select2ContainerSelector, { visible: true, timeout: 30000 });
             
-            // หา Element จริงที่จะใช้พิมพ์
-            const inputElement = await page.$(select2InputSelector);
+            for (const keyword of searchKeywords) {
+                console.log(`      Processing "${keyword}"...`);
+                
+                // 1. คลิกที่ Container เพื่อ Focus และเปิด Dropdown
+                await page.click(select2ContainerSelector);
+                await new Promise(r => setTimeout(r, 500)); // รอ Animation เปิด
 
-            if (inputElement) {
-                for (const keyword of searchKeywords) {
-                    console.log(`      Typing "${keyword}"...`);
-                    
-                    // 1. คลิกที่ Input เพื่อ Focus
-                    await inputElement.click();
-                    
-                    // 2. พิมพ์คำค้นหา
-                    await inputElement.type(keyword);
-                    
-                    // รอสักนิดให้ Dropdown Suggestion ขึ้น (สำคัญ)
-                    await new Promise(r => setTimeout(r, 1000));
+                // 2. พิมพ์คำค้นหาลงใน Input ที่ปรากฏขึ้นมา
+                // เราค้นหา Input ที่อยู่ภายใน #s2id_ddlharsh หรือ Input ที่เป็น Select2 Search Field ทั่วไป
+                const inputHandle = await page.$(select2InputSelector) || await page.$('.select2-input');
+                
+                if (inputHandle) {
+                    await inputHandle.type(keyword);
+                    await new Promise(r => setTimeout(r, 1000)); // รอ Suggestion ขึ้น
                     
                     // 3. กด Enter เพื่อเลือก
                     await page.keyboard.press('Enter');
+                    console.log(`      Selected: "${keyword}"`);
                     
-                    console.log(`      Pressed Enter for "${keyword}"`);
-                    
-                    // รอให้ระบบประมวลผลการเลือกสักครู่ก่อนทำรายการถัดไป
+                    // รอสักนิดก่อนทำรายการต่อไป
                     await new Promise(r => setTimeout(r, 500));
+                } else {
+                    console.log(`      ⚠️ Could not find input field inside ${select2ContainerSelector}`);
                 }
-            } else {
-                console.log('      ⚠️ Could not find Select2 input element.');
             }
 
         } catch (e) {
-            console.log('      ❌ Error in Select2 interaction:', e.message);
+            console.log('      ❌ Error Selecting Report Types:', e.message);
         }
         
         console.log('✅ Report Types Selection Finished');
