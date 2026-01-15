@@ -42,7 +42,7 @@ function getTodayFormatted() {
     const page = await browser.newPage();
     
     // --- Setup ---
-    // Timeout 5 นาที
+    // Timeout 5 นาที (300000 ms) เพียงพอสำหรับการรอ 120 วินาที
     page.setDefaultNavigationTimeout(300000);
     page.setDefaultTimeout(300000);
 
@@ -115,9 +115,7 @@ function getTodayFormatted() {
         // ---------------------------------------------------------
         console.log('   Selecting 3 Report Types (via #s2id_ddlharsh)...');
         
-        // Selector ที่คุณระบุ: #s2id_ddlharsh (Container ของ Select2)
         const select2ContainerSelector = '#s2id_ddlharsh';
-        // Input ที่อยู่ภายใน Container นี้ (สำหรับพิมพ์ค้นหา)
         const select2InputSelector = '#s2id_ddlharsh input'; 
         
         const searchKeywords = [
@@ -127,29 +125,20 @@ function getTodayFormatted() {
         ];
 
         try {
-            // รอให้ Container ปรากฏ
             await page.waitForSelector(select2ContainerSelector, { visible: true, timeout: 30000 });
             
             for (const keyword of searchKeywords) {
                 console.log(`      Processing "${keyword}"...`);
-                
-                // 1. คลิกที่ Container เพื่อ Focus และเปิด Dropdown
                 await page.click(select2ContainerSelector);
-                await new Promise(r => setTimeout(r, 500)); // รอ Animation เปิด
+                await new Promise(r => setTimeout(r, 500)); 
 
-                // 2. พิมพ์คำค้นหาลงใน Input ที่ปรากฏขึ้นมา
-                // เราค้นหา Input ที่อยู่ภายใน #s2id_ddlharsh หรือ Input ที่เป็น Select2 Search Field ทั่วไป
                 const inputHandle = await page.$(select2InputSelector) || await page.$('.select2-input');
                 
                 if (inputHandle) {
                     await inputHandle.type(keyword);
-                    await new Promise(r => setTimeout(r, 1000)); // รอ Suggestion ขึ้น
-                    
-                    // 3. กด Enter เพื่อเลือก
+                    await new Promise(r => setTimeout(r, 1000));
                     await page.keyboard.press('Enter');
                     console.log(`      Selected: "${keyword}"`);
-                    
-                    // รอสักนิดก่อนทำรายการต่อไป
                     await new Promise(r => setTimeout(r, 500));
                 } else {
                     console.log(`      ⚠️ Could not find input field inside ${select2ContainerSelector}`);
@@ -178,36 +167,21 @@ function getTodayFormatted() {
         
         console.log('   Clicking Search to update report...');
         try {
-            const searchBtnXPath = "//*[contains(text(), 'ค้นหา')] | //span[contains(@class, 'icon-search')]";
-            const searchBtns = await page.$$(`xpath/${searchBtnXPath}`);
+            // ใช้ Selector จากไฟล์ Recording ที่คุณส่งมา: td:nth-of-type(5) > span
+            const searchSelector = 'td:nth-of-type(5) > span';
             
-            if (searchBtns.length > 0) {
-                await searchBtns[0].click();
-            } else {
-                await page.click('td:nth-of-type(5) > span');
-            }
+            // รอให้ปุ่มค้นหาพร้อม
+            await page.waitForSelector(searchSelector, { visible: true, timeout: 10000 });
+            await page.click(searchSelector);
             
-            // --- NEW: Wait for Report Data to Load ---
-            console.log('   ⏳ Waiting for report data to load...');
-            
-            // 1. รอให้ Loading Overlay (ถ้ามี) หายไป (โดยปกติจะมีตัวหมุนๆ หรือ overlay ปังอยู่)
-            // ลองดักจับ Overlay ทั่วไป
-            try {
-                await page.waitForFunction(() => {
-                    // ตรวจสอบว่าไม่มี element ที่มี class 'loading' หรือ 'spinner' หรือ 'overlay' แสดงอยู่
-                    const loaders = document.querySelectorAll('.loading, .spinner, .blockUI'); 
-                    for(let l of loaders) {
-                        if(l.style.display !== 'none' && l.offsetWidth > 0 && l.offsetHeight > 0) return false;
-                    }
-                    return true;
-                }, { timeout: 10000 });
-            } catch(e) {} // ไม่ซีเรียสถ้าหาไม่เจอ
-            
-            // 2. รอเวลาเพิ่มอีกนิดเพื่อความชัวร์ (บางที spinner หายแต่ข้อมูลยัง render ไม่เสร็จ)
-            await new Promise(r => setTimeout(r, 15000)); 
+            // --- NEW: Wait 120 Seconds ---
+            console.log('   ⏳ Waiting 120 seconds for report generation...');
+            // รอ 120,000 ms (120 วินาที)
+            await new Promise(r => setTimeout(r, 120000)); 
+            console.log('   ✅ Wait complete.');
 
         } catch (e) {
-            console.log('⚠️ Warning: Could not click Search button.', e.message);
+            console.log('⚠️ Warning: Could not click Search button or wait failed.', e.message);
         }
 
         // ---------------------------------------------------------
