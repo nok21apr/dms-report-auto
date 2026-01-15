@@ -186,8 +186,26 @@ function getTodayFormatted() {
             } else {
                 await page.click('td:nth-of-type(5) > span');
             }
-            console.log('   Waiting for report data to update...');
-            await new Promise(r => setTimeout(r, 10000)); 
+            
+            // --- NEW: Wait for Report Data to Load ---
+            console.log('   ⏳ Waiting for report data to load...');
+            
+            // 1. รอให้ Loading Overlay (ถ้ามี) หายไป (โดยปกติจะมีตัวหมุนๆ หรือ overlay ปังอยู่)
+            // ลองดักจับ Overlay ทั่วไป
+            try {
+                await page.waitForFunction(() => {
+                    // ตรวจสอบว่าไม่มี element ที่มี class 'loading' หรือ 'spinner' หรือ 'overlay' แสดงอยู่
+                    const loaders = document.querySelectorAll('.loading, .spinner, .blockUI'); 
+                    for(let l of loaders) {
+                        if(l.style.display !== 'none' && l.offsetWidth > 0 && l.offsetHeight > 0) return false;
+                    }
+                    return true;
+                }, { timeout: 10000 });
+            } catch(e) {} // ไม่ซีเรียสถ้าหาไม่เจอ
+            
+            // 2. รอเวลาเพิ่มอีกนิดเพื่อความชัวร์ (บางที spinner หายแต่ข้อมูลยัง render ไม่เสร็จ)
+            await new Promise(r => setTimeout(r, 15000)); 
+
         } catch (e) {
             console.log('⚠️ Warning: Could not click Search button.', e.message);
         }
@@ -200,15 +218,19 @@ function getTodayFormatted() {
         cleanDownloadFolder(downloadPath);
 
         const excelBtnSelector = '#btnexport, button[title="Excel"], ::-p-aria(Excel)';
+        
+        // รอให้ปุ่มปรากฏและคลิกได้
         await page.waitForSelector(excelBtnSelector, { visible: true, timeout: 60000 });
         
+        console.log('   Clicking Export Button...');
         await page.evaluate(() => {
             const btn = document.querySelector('#btnexport') || document.querySelector('button[title="Excel"]');
             if(btn) btn.click();
         });
         
-        console.log('   Waiting for download (20s)...');
-        await new Promise(r => setTimeout(r, 20000));
+        // เพิ่มเวลารอ Download ให้นานขึ้น
+        console.log('   ⏳ Waiting for download (30s)...');
+        await new Promise(r => setTimeout(r, 30000));
 
         // ---------------------------------------------------------
         // Step 5: Email & Cleanup
@@ -240,6 +262,8 @@ function getTodayFormatted() {
 
         } else {
             console.log('❌ No file downloaded to send.');
+            // ลองถ่ายรูปหน้าจอตอนจบเผื่อดู error
+            await page.screenshot({ path: 'final_no_file.png' });
             throw new Error('Download failed or no file found');
         }
 
