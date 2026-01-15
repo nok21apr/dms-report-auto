@@ -13,17 +13,14 @@ function getTodayFormatted() {
 
 (async () => {
     // --- ส่วนการรับค่าจาก Secrets (Environment Variables) ---
-    // จะไม่มีการ Hardcode ค่า Default ไว้ในนี้ เพื่อความปลอดภัยสูงสุด
     const USERNAME = process.env.DTC_USERNAME;
     const PASSWORD = process.env.DTC_PASSWORD;
     const EMAIL_USER = process.env.EMAIL_USER;
     const EMAIL_PASS = process.env.EMAIL_PASS;
     const EMAIL_TO   = process.env.EMAIL_TO;
 
-    // ตรวจสอบว่ามีการใส่ค่าครบหรือไม่ ถ้าไม่ครบให้หยุดทำงาน
     if (!USERNAME || !PASSWORD || !EMAIL_USER || !EMAIL_PASS || !EMAIL_TO) {
         console.error('Error: Missing required secrets. Please check your GitHub Secrets configuration.');
-        console.error('Required: DTC_USERNAME, DTC_PASSWORD, EMAIL_USER, EMAIL_PASS, EMAIL_TO');
         process.exit(1);
     }
 
@@ -35,7 +32,7 @@ function getTodayFormatted() {
     }
 
     const browser = await puppeteer.launch({
-        headless: 'new',
+        headless: true, // v23+ ใช้ true ได้เลย (เป็น New Headless แล้ว)
         args: [
             '--no-sandbox',
             '--disable-setuid-sandbox',
@@ -85,8 +82,9 @@ function getTodayFormatted() {
 
         try {
              const dmsReportXPath = "//*[contains(text(), 'รายงานสถานะ DMS')]";
-             await page.waitForSelector('::-p-xpath(' + dmsReportXPath + ')', { visible: true, timeout: 10000 });
-             const elements = await page.$x(dmsReportXPath);
+             // แก้ไข: ใช้ page.$$ แทน page.$x สำหรับ Puppeteer v23+
+             const elements = await page.$$(`xpath/${dmsReportXPath}`);
+             
              if (elements.length > 0) {
                  await elements[0].click();
              } else {
@@ -116,7 +114,9 @@ function getTodayFormatted() {
         console.log('Clicking Search to update report...');
         try {
             const searchBtnXPath = "//*[contains(text(), 'ค้นหา')] | //span[contains(@class, 'icon-search')] | //i[contains(@class, 'icon-search')]";
-            const searchBtns = await page.$x(searchBtnXPath);
+            // แก้ไข: ใช้ page.$$ แทน page.$x สำหรับ Puppeteer v23+
+            const searchBtns = await page.$$(`xpath/${searchBtnXPath}`);
+            
             if (searchBtns.length > 0) {
                 await searchBtns[0].click();
             } else {
