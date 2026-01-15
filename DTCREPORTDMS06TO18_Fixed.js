@@ -111,84 +111,77 @@ function getTodayFormatted() {
         console.log('✅ Truck "ทั้งหมด" Selected');
 
         // ---------------------------------------------------------
-        // Step 2.6: Select Report Types (Targeting #ddlharsh)
+        // Step 2.6: Select Report Types (Targeting #ddlharsh with JS)
         // ---------------------------------------------------------
-        console.log('   Selecting 3 Report Types...');
+        console.log('   Selecting 3 Report Types (JS Injection Mode)...');
         
-        // 1. เปิด Dropdown โดยคลิกที่ #ddlharsh ตามที่ระบุใน JSON
+        // 1. เปิด Dropdown โดยคลิกที่ #ddlharsh
         try {
             console.log('      Clicking #ddlharsh to open dropdown...');
-            // รอให้ปุ่มปรากฏ
             await page.waitForSelector('#ddlharsh', { visible: true, timeout: 30000 });
-            
-            // คลิกเพื่อเปิดรายการ
             await page.click('#ddlharsh');
-            
-            // รอให้ Animation ของ Dropdown ทำงานสักนิด (1 วินาที)
             await new Promise(r => setTimeout(r, 1000));
         } catch(e) {
-            console.log('      ⚠️ Could not click #ddlharsh (Element might vary):', e.message);
+            console.log('      ⚠️ Could not click #ddlharsh:', e.message);
         }
 
-        // 2. ใช้ JS ค้นหา Text และคลิกเลย (Force Click)
-        // ค้นหาคำว่า "ระดับ 1", "ระดับ 2", "หาวนอน"
-        const reportKeywords = ["ระดับ 1", "ระดับ 2", "หาวนอน"];
-        
-        for (const keyword of reportKeywords) {
-            try {
-                console.log(`      Searching for option "${keyword}"...`);
+        // 2. ใช้ JavaScript ภายใน Browser (page.evaluate) เพื่อค้นหาและคลิก
+        await page.evaluate(() => {
+            const keywords = ["ระดับ 1", "ระดับ 2", "หาว"];
+            console.log('Starting JS selection for:', keywords);
+
+            // ค้นหา Element ทั้งหมดที่อาจจะเป็นตัวเลือก (Label, Span, หรือ ListItem)
+            // ค้นหาทั่วทั้ง Document เพราะ Dropdown มักจะ render ไว้ที่ Body
+            const allElements = document.querySelectorAll('label, span, div, li');
+
+            keywords.forEach(keyword => {
+                let found = false;
                 
-                const found = await page.evaluate((kw) => {
-                    // ใช้ XPath ค้นหา text node ที่มีคำนั้นอยู่
-                    const xpath = `//*[contains(text(), '${kw}')]`;
-                    const result = document.evaluate(xpath, document, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null);
-                    
-                    if (result.snapshotLength > 0) {
-                        // วนลูปหา element ที่เหมาะสมที่สุดที่จะคลิก (เช่น div, span, li)
-                        for (let i = 0; i < result.snapshotLength; i++) {
-                            let el = result.snapshotItem(i);
-                            
-                            // เดินขึ้นไปหา Container ที่คลิกได้ (เช่นถ้า text อยู่ใน span เล็กๆ ให้คลิก div ที่หุ้มอยู่)
-                            while (el && el.tagName !== 'BODY') {
-                                // ถ้าเจอ Checkbox
-                                if (el.tagName === 'INPUT' && el.type === 'checkbox') {
-                                    if(!el.checked) el.click();
-                                    return true;
-                                }
-                                // ถ้าเจอ List Item (div/li) ที่น่าจะเป็นตัวเลือก
-                                if (el.tagName === 'LI' || (el.tagName === 'DIV' && (el.className.includes('item') || el.className.includes('ui-multiselect-checkboxes')))) {
-                                    // ลองหา checkbox ข้างในก่อน
-                                    const internalCheckbox = el.querySelector('input[type="checkbox"]');
-                                    if (internalCheckbox) {
-                                        if(!internalCheckbox.checked) internalCheckbox.click();
-                                        return true;
-                                    }
-                                    // ถ้าไม่มี checkbox คลิกที่ตัวมันเอง
-                                    el.click();
-                                    return true;
-                                }
-                                el = el.parentElement;
+                // วนลูปหา element ที่มีข้อความตรงกับ keyword
+                for (let el of allElements) {
+                    // ตรวจสอบว่ามีข้อความและตรงกับคีย์เวิร์ดหรือไม่ (ตัดช่องว่างออกก่อนเทียบ)
+                    if (el.innerText && el.innerText.trim().includes(keyword)) {
+                        
+                        // ตรวจสอบว่าเป็น element ที่คลิกได้จริงๆ หรือไม่ (เช่นเป็น Label ของ Checkbox)
+                        // กรณี 1: เป็น Label ที่มี checkbox อยู่ข้างในหรือข้างๆ
+                        let checkbox = el.querySelector('input[type="checkbox"]');
+                        if (!checkbox && el.htmlFor) {
+                            checkbox = document.getElementById(el.htmlFor);
+                        }
+                        
+                        // กรณี 2: เป็น div/li ที่มี checkbox
+                        if (!checkbox) {
+                             checkbox = el.parentElement ? el.parentElement.querySelector('input[type="checkbox"]') : null;
+                        }
+
+                        // ถ้าเจอ Checkbox ให้เช็คว่าติ๊กหรือยัง
+                        if (checkbox) {
+                            if (!checkbox.checked) {
+                                checkbox.click(); // คลิกที่ Checkbox โดยตรง
+                                // บางทีต้องคลิกที่ Label ด้วยเพื่อให้ UI อัปเดต
+                                el.click(); 
                             }
-                            
-                            // ถ้าไม่เจอ parent ที่ชัดเจน ให้คลิกที่ตัว element เองเลย (Fallback)
-                            result.snapshotItem(i).click();
-                            return true;
+                            found = true;
+                            break; // เจอแล้ว หยุดหาสำหรับ keyword นี้
+                        } else {
+                            // ถ้าไม่เจอ Checkbox แต่มีข้อความตรง ให้ลองคลิกที่ตัวมันเองเลย
+                            // (เช่น Dropdown บางแบบใช้ div ธรรมดาทำเป็นปุ่ม)
+                            // เช็คเพิ่มเติมว่าเป็น element ที่ visible
+                            if (el.offsetParent !== null) {
+                                el.click();
+                                found = true;
+                                break;
+                            }
                         }
                     }
-                    return false;
-                }, keyword);
-
-                if (found) {
-                    console.log(`      ✅ Clicked option containing "${keyword}"`);
-                } else {
-                    console.log(`      ⚠️ Warning: Text "${keyword}" not found in DOM.`);
                 }
                 
-                await new Promise(r => setTimeout(r, 500)); // เว้นจังหวะ
-            } catch (e) {
-                console.log(`      ❌ Error processing "${keyword}":`, e.message);
-            }
-        }
+                if (!found) {
+                    console.log('JS: Could not find option for ' + keyword);
+                }
+            });
+        });
+        
         console.log('✅ Report Types Selection Finished');
 
         // ---------------------------------------------------------
