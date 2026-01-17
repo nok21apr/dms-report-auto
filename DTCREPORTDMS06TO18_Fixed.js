@@ -210,22 +210,35 @@ function getTodayFormatted() {
         // Step 5: Email & Cleanup
         // ---------------------------------------------------------
         console.log('5️⃣ Step 5: Processing email...');
+        const files = fs.readdirSync(downloadPath).filter(f => !f.startsWith('.'));
         
-        const recentFile = getMostRecentFile(downloadPath);
-        
-        if (recentFile) {
-            const filePath = path.join(downloadPath, recentFile.file);
-            const fileName = recentFile.file;
+        if (files.length > 0) {
+            // หาไฟล์ล่าสุด
+            const recentFile = files.map(f => ({ 
+                name: f, 
+                time: fs.statSync(path.join(downloadPath, f)).mtime.getTime() 
+            })).sort((a, b) => b.time - a.time)[0];
+
+            const filePath = path.join(downloadPath, recentFile.name);
+            const fileName = recentFile.name;
             const subjectLine = `${fileName} ช่วง0600ถึง1800`;
 
-            await sendEmail({
-                user: EMAIL_USER,
-                pass: EMAIL_PASS,
-                to: EMAIL_TO,
-                subject: subjectLine,
-                attachmentPath: filePath
+            const transporter = nodemailer.createTransport({
+                service: 'gmail',
+                auth: { user: EMAIL_USER, pass: EMAIL_PASS }
             });
 
+            // ปรับส่วนการส่งเมลตาม request
+            console.log(`   Sending email to: ${EMAIL_TO}`);
+            await transporter.sendMail({
+                from: `"DTC DMS Reporter" <${EMAIL_USER}>`, // ชื่อผู้ส่งแบบกำหนดเอง
+                to: EMAIL_TO,
+                subject: subjectLine,
+                text: 'รายงาน DTC DMS กะเช้า (06:00 - 18:00)\n\n(Auto-generated email)',
+                attachments: [{ filename: fileName, path: filePath }] // ระบุ filename ชัดเจน
+            });
+
+            console.log('   Email sent successfully.');
             console.log('   Deleting downloaded file...');
             try {
                 fs.unlinkSync(filePath);
@@ -233,10 +246,8 @@ function getTodayFormatted() {
             } catch (err) {
                 console.error('⚠️ Error deleting file:', err);
             }
-
         } else {
             console.log('❌ No file downloaded to send.');
-            // ลองถ่ายรูปหน้าจอตอนจบเผื่อดู error
             await page.screenshot({ path: 'final_no_file.png' });
             throw new Error('Download failed or no file found');
         }
@@ -251,43 +262,3 @@ function getTodayFormatted() {
         await browser.close();
     }
 })();
-
-async function sendEmail({ user, pass, to, subject, attachmentPath }) {
-    const transporter = nodemailer.createTransport({
-        service: 'gmail',
-        auth: { user, pass }
-    });
-
-    const mailOptions = {
-        from: user,
-        to: to,
-        subject: subject,
-        text: 'รายงาน DMS ประจำช่วงเวลา 06:00 - 18:00\n\n(Auto-generated email)',
-        attachments: attachmentPath ? [{ path: attachmentPath }] : []
-    };
-
-    const info = await transporter.sendMail(mailOptions);
-    console.log('📧 Email sent: ' + info.response);
-}
-
-const getMostRecentFile = (dir) => {
-    try {
-        const files = fs.readdirSync(dir);
-        const validFiles = files.filter(file => fs.lstatSync(path.join(dir, file)).isFile() && !file.startsWith('.'));
-        if (validFiles.length === 0) return null;
-        return validFiles
-            .map(file => ({ file, mtime: fs.lstatSync(path.join(dir, file)).mtime }))
-            .sort((a, b) => b.mtime.getTime() - a.mtime.getTime())[0];
-    } catch (e) { return null; }
-};
-
-const cleanDownloadFolder = (dir) => {
-    try {
-        if (fs.existsSync(dir)) {
-            const files = fs.readdirSync(dir);
-            for (const file of files) {
-                fs.unlinkSync(path.join(dir, file));
-            }
-        }
-    } catch (e) {}
-};
