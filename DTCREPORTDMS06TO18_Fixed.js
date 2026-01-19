@@ -244,8 +244,7 @@ function getTodayFormatted() {
                 from: `"DTC DMS Reporter" <${EMAIL_USER}>`, // ชื่อผู้ส่งแบบกำหนดเอง
                 to: EMAIL_TO,
                 subject: subjectLine,
-                text: `ถึง ผู้เกี่ยวข้อง`,
-                `รายงาน DTC DMS กะเช้า (06:00 - 18:00)\n\n(Auto-generated email)`,
+                text: `ถึง ผู้เกี่ยวข้อง\nรายงาน DTC DMS กะเช้า (06:00 - 18:00)\n\n(Auto-generated email)`,
                 attachments: [{ filename: fileName, path: filePath }] // ระบุ filename ชัดเจน
             });
 
@@ -273,6 +272,7 @@ function getTodayFormatted() {
         await browser.close();
     }
 })();
+
 
 
 
