@@ -1,16 +1,15 @@
 {
-  "name": "dtc-dms-automation",
+  "name": "dms-report-auto",
   "version": "1.0.0",
-  "description": "Automated script for downloading DTC DMS reports",
-  "main": "DTCREPORTDMS06TO18_Fixed.js",
+  "description": "Automation for DTC Report 06:00-18:00",
+  "main": "DTCREPORTDMS06TO18.js",
   "scripts": {
-    "start": "node DTCREPORTDMS06TO18_Fixed.js"
+    "start": "node DTCREPORTDMS06TO18.js"
   },
   "dependencies": {
     "puppeteer": "^23.0.0",
-    "nodemailer": "^6.9.7"
-  },
-  "engines": {
-    "node": ">=18.0.0"
+    "nodemailer": "^6.9.7",
+    "exceljs": "^4.4.0",
+    "jsdom": "^24.0.0"
   }
 }
